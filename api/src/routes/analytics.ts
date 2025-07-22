@@ -1,7 +1,8 @@
 import express from 'express';
-import { supabaseAdmin } from '../services/supabase';
+import { getSupabaseAdmin } from '../services/supabase';
 
 const router = express.Router();
+const supabaseAdmin = getSupabaseAdmin();
 
 // Get sentiment distribution
 router.get('/sentiment', async (req, res) => {

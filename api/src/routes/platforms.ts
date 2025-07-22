@@ -1,13 +1,17 @@
 import express from 'express';
-import { supabaseAdmin } from '../services/supabase';
+import { getSupabaseAdmin } from '../services/supabase';
 
 const router = express.Router();
+const supabaseAdmin = getSupabaseAdmin();
 
 // Get connected platforms for user
 router.get('/connected', async (req, res) => {
   try {
     // TODO: Get user ID from auth token
     const userId = req.headers['x-user-id']; // Placeholder
+    if (!userId) {
+      return res.status(401).json({ error: 'User ID not provided' });
+    }
     
     const { data, error } = await supabaseAdmin
       .from('user_platforms')
@@ -54,6 +58,9 @@ router.delete('/disconnect/:platform', async (req, res) => {
     const { platform } = req.params;
     // TODO: Get user ID from auth token
     const userId = req.headers['x-user-id']; // Placeholder
+    if (!userId) {
+      return res.status(401).json({ error: 'User ID not provided' });
+    }
     
     const { error } = await supabaseAdmin
       .from('user_platforms')

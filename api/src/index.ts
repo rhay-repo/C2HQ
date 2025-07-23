@@ -11,6 +11,9 @@ import authRoutes from './routes/auth';
 import commentsRoutes from './routes/comments';
 import platformsRoutes from './routes/platforms';
 import analyticsRoutes from './routes/analytics';
+import demoRoutes from './routes/demo';
+import youtubeRoutes from './routes/youtube';
+import googleProfileRoutes from './routes/google-profile';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -18,7 +21,11 @@ const PORT = process.env.PORT || 3001;
 // Middleware
 app.use(helmet());
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  origin: [
+    process.env.FRONTEND_URL || 'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    'http://localhost:3000'
+  ],
   credentials: true
 }));
 app.use(morgan('combined'));
@@ -30,6 +37,9 @@ app.use('/api/auth', authRoutes);
 app.use('/api/comments', commentsRoutes);
 app.use('/api/platforms', platformsRoutes);
 app.use('/api/analytics', analyticsRoutes);
+app.use('/api/demo', demoRoutes);
+app.use('/api/youtube', youtubeRoutes);
+app.use('/api/google-profile', googleProfileRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {

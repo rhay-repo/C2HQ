@@ -1,7 +1,69 @@
+'use client'
+
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
 
 export default function Home() {
+  const router = useRouter()
+  const [isLoading, setIsLoading] = useState(true)
+
+  useEffect(() => {
+    const handleAuthCallback = async () => {
+      try {
+        // Check if we have hash parameters (OAuth callback)
+        if (window.location.hash) {
+          // Handle the OAuth callback with hash parameters
+          const { data, error } = await supabase.auth.getSession()
+          
+          if (error) {
+            console.error('Auth error:', error)
+          } else if (data.session) {
+            // Clear the hash from URL
+            window.history.replaceState(null, '', window.location.pathname)
+            // Redirect to demo dashboard
+            router.push('/demo-dashboard')
+            return
+          }
+        }
+
+        // Check for existing session
+        const { data: { session } } = await supabase.auth.getSession()
+        
+        if (session) {
+          // User is already authenticated, redirect to demo dashboard
+          router.push('/demo-dashboard')
+          return
+        }
+      } catch (error) {
+        console.error('Error handling auth:', error)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    handleAuthCallback()
+  }, [router])
+
+  // Show loading state while checking authentication
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-8 h-8 animate-spin rounded-full border-4 border-indigo-600 border-t-transparent mb-4 mx-auto"></div>
+          <p className="text-gray-600">Checking authentication...</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
       {/* Header */}
@@ -41,9 +103,14 @@ export default function Home() {
                 Start Free Trial
               </Button>
             </Link>
-            <Link href="/demo">
+            <Link href="/login?redirectTo=/demo-dashboard">
               <Button variant="outline" size="lg" className="px-8 py-3">
-                View Demo
+                View Your Data
+              </Button>
+            </Link>
+            <Link href="/demo">
+              <Button variant="secondary" size="lg" className="px-8 py-3">
+                Sample Demo
               </Button>
             </Link>
           </div>
@@ -51,47 +118,37 @@ export default function Home() {
 
         {/* Features Grid */}
         <div className="mt-20 grid md:grid-cols-3 gap-8">
-          <div className="bg-white p-8 rounded-xl shadow-sm">
-            <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center mb-4">
-              <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
+          <div className="text-center p-6 bg-white rounded-lg shadow-sm">
+            <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center mx-auto mb-4">
+              <span className="text-2xl">🎯</span>
             </div>
-            <h3 className="text-xl font-semibold mb-3">Sentiment Analysis</h3>
+            <h3 className="text-xl font-semibold mb-2">Sentiment Analysis</h3>
             <p className="text-gray-600">
-              Understand the emotional tone of your comments with advanced AI sentiment analysis. 
-              Track positive, negative, and neutral feedback trends over time.
+              Understand how your audience really feels about your content with advanced AI sentiment detection.
             </p>
           </div>
-
-          <div className="bg-white p-8 rounded-xl shadow-sm">
-            <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center mb-4">
-              <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.268 15.5c-.77.833.192 2.5 1.732 2.5z" />
-              </svg>
+          
+          <div className="text-center p-6 bg-white rounded-lg shadow-sm">
+            <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center mx-auto mb-4">
+              <span className="text-2xl">🛡️</span>
             </div>
-            <h3 className="text-xl font-semibold mb-3">Toxicity Detection</h3>
+            <h3 className="text-xl font-semibold mb-2">Toxicity Detection</h3>
             <p className="text-gray-600">
-              Automatically identify harmful, offensive, or toxic comments using Google's Perspective API 
-              and custom ML models to protect your community.
+              Automatically identify and filter harmful comments to maintain a positive community environment.
             </p>
           </div>
-
-          <div className="bg-white p-8 rounded-xl shadow-sm">
-            <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mb-4">
-              <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-              </svg>
+          
+          <div className="text-center p-6 bg-white rounded-lg shadow-sm">
+            <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mx-auto mb-4">
+              <span className="text-2xl">📊</span>
             </div>
-            <h3 className="text-xl font-semibold mb-3">Theme Insights</h3>
+            <h3 className="text-xl font-semibold mb-2">Theme Insights</h3>
             <p className="text-gray-600">
-              Discover common themes and topics in your comments. Understand what your audience 
-              cares about most and tailor your content accordingly.
+              Discover what topics your audience cares about most with intelligent theme extraction.
             </p>
           </div>
         </div>
 
-        {/* Platform Support */}
         <div className="mt-20 text-center">
           <h2 className="text-3xl font-bold text-gray-900 mb-8">
             Connect Your Platforms
@@ -115,6 +172,33 @@ export default function Home() {
               </div>
               <span className="text-lg font-medium">TikTok (Coming Soon)</span>
             </div>
+          </div>
+        </div>
+
+        {/* Demo Section */}
+        <div className="mt-20 bg-white rounded-2xl p-12 shadow-lg">
+          <div className="text-center max-w-3xl mx-auto">
+            <h2 className="text-3xl font-bold text-gray-900 mb-6">
+              See C2HQ in Action
+            </h2>
+            <p className="text-xl text-gray-600 mb-8">
+              Experience the power of AI-driven comment analysis with your own YouTube data or explore our sample demo.
+            </p>
+            <div className="space-x-4">
+              <Link href="/login?redirectTo=/demo-dashboard">
+                <Button size="lg" className="px-8 py-3">
+                  🔗 Connect Your YouTube Channel
+                </Button>
+              </Link>
+              <Link href="/demo">
+                <Button variant="outline" size="lg" className="px-8 py-3">
+                  📊 View Sample Demo
+                </Button>
+              </Link>
+            </div>
+            <p className="text-sm text-gray-500 mt-4">
+              Your real data demo shows actual YouTube channel stats, latest videos, and Google profile information.
+            </p>
           </div>
         </div>
       </main>

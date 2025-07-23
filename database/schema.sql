@@ -131,6 +131,17 @@ CREATE TABLE public.weekly_digests (
     UNIQUE(user_id, week_start)
 );
 
+-- Demo comment sets for personalized demos
+CREATE TABLE demo_comment_sets (
+    id UUID PRIMARY KEY DEFAULT extensions.uuid_generate_v4(),
+    email TEXT,
+    channel_id TEXT,
+    channel_name TEXT,
+    demo_data JSONB,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- Indexes for performance
 CREATE INDEX idx_comments_video_id ON public.comments(video_id);
 CREATE INDEX idx_comments_sentiment ON public.comments(sentiment);
@@ -143,6 +154,10 @@ CREATE INDEX idx_videos_published_at ON public.videos(published_at);
 CREATE INDEX idx_user_platforms_user_id ON public.user_platforms(user_id);
 CREATE INDEX idx_analysis_jobs_status ON public.analysis_jobs(status);
 CREATE INDEX idx_analysis_jobs_user_id ON public.analysis_jobs(user_id);
+
+-- Index for fast lookups
+CREATE INDEX idx_demo_comment_sets_email ON demo_comment_sets(email);
+CREATE INDEX idx_demo_comment_sets_channel_id ON demo_comment_sets(channel_id);
 
 -- Row Level Security Policies
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
@@ -220,3 +235,9 @@ CREATE TRIGGER update_comments_updated_at BEFORE UPDATE ON public.comments
 
 CREATE TRIGGER update_user_settings_updated_at BEFORE UPDATE ON public.user_settings
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column(); 
+
+-- Trigger for updated_at
+CREATE TRIGGER demo_comment_sets_updated_at
+    BEFORE UPDATE ON demo_comment_sets
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column(); 

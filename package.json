@@ -24,6 +24,7 @@
     "type-check": "cd frontend && npm run type-check && cd ../api && npm run build"
   },
   "devDependencies": {
+    "axios": "^1.10.0",
     "concurrently": "^8.2.2"
   },
   "keywords": [
@@ -40,4 +41,4 @@
     "type": "git",
     "url": "https://github.com/your-username/C2HQ.git"
   }
-} 
+}

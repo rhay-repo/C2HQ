@@ -1,5 +1,12 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
+# env files (can opt-in for committing if needed)
+.env*
+
+# google client secret
+client_secret_394176511607-ob7b84mlocuh11f8co3jl1am3v660gao.apps.googleusercontent.com.json
+client_secret_*.json
+
 # dependencies
 /node_modules
 /.pnp

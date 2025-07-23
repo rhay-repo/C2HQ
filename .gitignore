@@ -95,4 +95,4 @@ coverage.xml
 .python-version
 
 # Supabase
-.supabase/ 
+.supabase/ client_secret_*.json

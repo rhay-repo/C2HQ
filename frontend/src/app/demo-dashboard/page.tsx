@@ -10,7 +10,11 @@ import {
   User, 
   TrendingUp,
   CheckCircle,
-  XCircle
+  XCircle,
+  Users,
+  Video,
+  Eye,
+  Calendar
 } from 'lucide-react';
 import Image from 'next/image';
 
@@ -23,12 +27,33 @@ interface GoogleProfile {
   locale?: string;
 }
 
+interface YouTubeChannel {
+  id: string;
+  name: string;
+  description: string;
+  profileImage: string;
+  subscriberCount: number;
+  videoCount: number;
+  totalViews: number;
+  createdAt: string;
+  country?: string;
+  customUrl?: string;
+}
+
 export default function DemoDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState<{ id: string; email?: string } | null>(null);
+  
+  // Google Profile State
   const [googleProfile, setGoogleProfile] = useState<GoogleProfile | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
+  
+  // YouTube Channel State
+  const [youtubeChannel, setYoutubeChannel] = useState<YouTubeChannel | null>(null);
+  const [youtubeLoading, setYoutubeLoading] = useState(false);
+  const [youtubeError, setYoutubeError] = useState<string | null>(null);
+  
   const router = useRouter();
 
   useEffect(() => {
@@ -45,8 +70,9 @@ export default function DemoDashboardPage() {
         setCurrentUser(currentUser);
         setLoading(false);
 
-        // Now try to fetch Google profile
+        // Now try to fetch Google profile and YouTube data
         await fetchGoogleProfile(currentUser.id);
+        await fetchYouTubeChannel(currentUser.id);
       } catch (err) {
         console.error('Auth check error:', err);
         router.push('/login?redirectTo=/demo-dashboard');
@@ -71,7 +97,7 @@ export default function DemoDashboardPage() {
       const providerToken = session.provider_token;
       
       if (!providerToken) {
-        throw new Error('No Google access token found');
+        throw new Error('Your Google access token has expired. Please sign in again.');
       }
 
       // Prepare headers with the access token
@@ -100,6 +126,67 @@ export default function DemoDashboardPage() {
     }
   };
 
+  const fetchYouTubeChannel = async (userId: string) => {
+    setYoutubeLoading(true);
+    setYoutubeError(null);
+
+    try {
+      // Get session to access provider token
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError || !session) {
+        throw new Error('No valid session found');
+      }
+
+      const providerToken = session.provider_token;
+      
+      if (!providerToken) {
+        throw new Error('Your Google access token has expired. Please sign in again.');
+      }
+
+      // Prepare headers with the access token
+      const headers = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`,
+        'X-Provider-Token': providerToken,
+      };
+
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/youtube/channel/${userId}`, {
+        headers,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `HTTP ${response.status}`);
+      }
+
+      const youtubeData = await response.json();
+      setYoutubeChannel(youtubeData.channel);
+    } catch (err) {
+      console.error('YouTube API error:', err);
+      setYoutubeError(err instanceof Error ? err.message : 'Failed to load YouTube channel');
+    } finally {
+      setYoutubeLoading(false);
+    }
+  };
+
+  const formatNumber = (num: number) => {
+    if (num >= 1000000) {
+      return (num / 1000000).toFixed(1) + 'M';
+    } else if (num >= 1000) {
+      return (num / 1000).toFixed(1) + 'K';
+    }
+    return num.toString();
+  };
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric'
+    });
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
@@ -125,6 +212,7 @@ export default function DemoDashboardPage() {
                   width={64}
                   height={64}
                   className="w-full h-full object-cover"
+                  priority
                 />
               </div>
             ) : (
@@ -194,12 +282,21 @@ export default function DemoDashboardPage() {
               <div className="text-center py-8">
                 <XCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
                 <p className="text-red-600 mb-4">{profileError}</p>
-                <Button 
-                  variant="outline" 
-                  onClick={() => currentUser && fetchGoogleProfile(currentUser.id)}
-                >
-                  Try Again
-                </Button>
+                <div className="space-x-2">
+                  <Button 
+                    variant="outline" 
+                    onClick={() => currentUser && fetchGoogleProfile(currentUser.id)}
+                  >
+                    Try Again
+                  </Button>
+                  {profileError.includes('expired') && (
+                    <Button 
+                      onClick={() => router.push('/login?redirectTo=/demo-dashboard')}
+                    >
+                      Sign In Again
+                    </Button>
+                  )}
+                </div>
               </div>
             )}
 
@@ -239,15 +336,117 @@ export default function DemoDashboardPage() {
           </CardContent>
         </Card>
 
+        {/* YouTube Channel Section */}
+        <Card className="mb-8">
+          <CardHeader>
+            <CardTitle className="flex items-center space-x-2">
+              <Video className="h-5 w-5 text-red-600" />
+              <span>YouTube Channel</span>
+              {youtubeLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+              {!youtubeLoading && youtubeChannel && <CheckCircle className="h-4 w-4 text-green-600" />}
+              {!youtubeLoading && youtubeError && <XCircle className="h-4 w-4 text-red-600" />}
+            </CardTitle>
+            <CardDescription>
+              {youtubeLoading ? 'Loading your YouTube channel...' : 
+               youtubeError ? 'Failed to load YouTube channel' :
+               youtubeChannel ? 'Your YouTube channel information' :
+               'YouTube channel not available'}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {youtubeLoading && (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-6 w-6 animate-spin mr-2" />
+                <span>Fetching YouTube channel data...</span>
+              </div>
+            )}
+
+            {youtubeError && (
+              <div className="text-center py-8">
+                <XCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+                <p className="text-red-600 mb-4">{youtubeError}</p>
+                <div className="space-x-2">
+                  <Button 
+                    variant="outline" 
+                    onClick={() => currentUser && fetchYouTubeChannel(currentUser.id)}
+                  >
+                    Try Again
+                  </Button>
+                  {youtubeError.includes('expired') && (
+                    <Button 
+                      onClick={() => router.push('/login?redirectTo=/demo-dashboard')}
+                    >
+                      Sign In Again
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {youtubeChannel && (
+              <div className="space-y-6">
+                {/* Channel Info */}
+                <div className="flex items-start space-x-6">
+                  <div className="w-24 h-24 rounded-full overflow-hidden flex-shrink-0">
+                    <Image
+                      src={youtubeChannel.profileImage}
+                      alt={youtubeChannel.name}
+                      width={96}
+                      height={96}
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="text-xl font-semibold mb-2">{youtubeChannel.name}</h3>
+                    {youtubeChannel.description && (
+                      <p className="text-gray-600 mb-3 line-clamp-2">{youtubeChannel.description}</p>
+                    )}
+                    <div className="flex flex-wrap gap-4 text-sm text-gray-500">
+                      <span>ID: {youtubeChannel.id}</span>
+                      {youtubeChannel.country && <span>📍 {youtubeChannel.country}</span>}
+                      <span>📅 Created {formatDate(youtubeChannel.createdAt)}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Channel Stats */}
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="text-center p-4 bg-gray-50 rounded-lg">
+                    <Users className="h-6 w-6 mx-auto mb-2 text-blue-600" />
+                    <div className="text-2xl font-bold text-gray-900">
+                      {formatNumber(youtubeChannel.subscriberCount)}
+                    </div>
+                    <div className="text-sm text-gray-600">Subscribers</div>
+                  </div>
+                  <div className="text-center p-4 bg-gray-50 rounded-lg">
+                    <Video className="h-6 w-6 mx-auto mb-2 text-red-600" />
+                    <div className="text-2xl font-bold text-gray-900">
+                      {formatNumber(youtubeChannel.videoCount)}
+                    </div>
+                    <div className="text-sm text-gray-600">Videos</div>
+                  </div>
+                  <div className="text-center p-4 bg-gray-50 rounded-lg">
+                    <Eye className="h-6 w-6 mx-auto mb-2 text-green-600" />
+                    <div className="text-2xl font-bold text-gray-900">
+                      {formatNumber(youtubeChannel.totalViews)}
+                    </div>
+                    <div className="text-sm text-gray-600">Total Views</div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
         {/* Coming Soon Section */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center space-x-2">
               <TrendingUp className="h-5 w-5" />
-              <span>Next: YouTube Data</span>
+              <span>Next: Recent Videos & Analysis</span>
             </CardTitle>
             <CardDescription>
-              We&apos;ll add your YouTube channel information next.
+              We&apos;ll add your recent videos and comment analysis next.
             </CardDescription>
           </CardHeader>
           <CardContent>

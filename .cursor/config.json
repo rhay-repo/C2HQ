@@ -2,7 +2,7 @@
     "rules": [
       {
         "pattern": ".*",
-        "instructions": "NEVER start or stop services. Instead, instruct the user on which commands to run manually."
+        "instructions": "NEVER run commands yourself to start or stop services. Instead, only tell the user on which commands to run manually. For now, everything is being run locally, including our db, Supabase."
       }
     ]
   }

@@ -1,6 +1,7 @@
 import express from 'express';
 import { google } from 'googleapis';
 import { getSupabaseAdmin } from '../services/supabase';
+import { authenticateUser } from '../middleware/auth';
 
 const router = express.Router();
 const supabaseAdmin = getSupabaseAdmin();
@@ -9,9 +10,9 @@ const supabaseAdmin = getSupabaseAdmin();
 const people = google.people('v1');
 
 // Get user profile data from Google People API
-router.get('/profile/:userId', async (req, res) => {
+router.get('/profile', authenticateUser, async (req, res) => {
   try {
-    const { userId } = req.params;
+    const userId = req.userId!;
     
     // Try to get access token from header first
     let accessToken: string | null = req.headers['x-provider-token'] as string || null;
@@ -149,9 +150,9 @@ router.get('/profile/:userId', async (req, res) => {
 });
 
 // Get user's Google account info (simpler endpoint)
-router.get('/basic/:userId', async (req, res) => {
+router.get('/basic', authenticateUser, async (req, res) => {
   try {
-    const { userId } = req.params;
+    const userId = req.userId!;
     
     // Try to get access token from header first
     let accessToken: string | null = req.headers['x-provider-token'] as string || null;

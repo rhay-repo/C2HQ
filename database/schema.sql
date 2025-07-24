@@ -71,6 +71,8 @@ CREATE TABLE public.comments (
     sentiment_score DECIMAL(3,2), -- -1.0 to 1.0
     toxicity_score DECIMAL(3,2), -- 0.0 to 1.0
     themes TEXT[], -- array of theme strings
+    tags TEXT[], -- array of tag strings
+    primary_tag TEXT, -- primary classification tag
     emotions JSONB, -- emotion scores as JSON
     keywords JSONB, -- extracted keywords as JSON
     
@@ -148,6 +150,8 @@ CREATE INDEX idx_comments_sentiment ON public.comments(sentiment);
 CREATE INDEX idx_comments_toxicity ON public.comments(toxicity_score);
 CREATE INDEX idx_comments_published_at ON public.comments(published_at);
 CREATE INDEX idx_comments_analysis_completed ON public.comments(analysis_completed_at);
+CREATE INDEX idx_comments_tags ON public.comments USING GIN(tags);
+CREATE INDEX idx_comments_primary_tag ON public.comments(primary_tag);
 CREATE INDEX idx_videos_user_id ON public.videos(user_id);
 CREATE INDEX idx_videos_platform ON public.videos(platform);
 CREATE INDEX idx_videos_published_at ON public.videos(published_at);

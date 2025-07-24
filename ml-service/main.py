@@ -12,6 +12,7 @@ from services.toxicity_detector import ToxicityDetector
 from services.theme_extractor import ThemeExtractor
 from services.perspective_api import PerspectiveAPIClient
 from services.supabase_client import SupabaseClient
+from services.comment_tagger import CommentTagger
 
 # Load environment variables
 load_dotenv()
@@ -42,6 +43,7 @@ toxicity_detector = ToxicityDetector()
 theme_extractor = ThemeExtractor()
 perspective_client = PerspectiveAPIClient()
 supabase_client = SupabaseClient()
+comment_tagger = CommentTagger()
 
 # Request/Response models
 class CommentAnalysisRequest(BaseModel):
@@ -56,6 +58,9 @@ class CommentAnalysisResponse(BaseModel):
     toxicity_score: float
     themes: List[str]
     emotions: Dict[str, float]
+    tags: List[str]
+    primary_tag: Optional[str] = None
+    tag_count: int = 0
     
 class BatchAnalysisRequest(BaseModel):
     comments: List[CommentAnalysisRequest]
@@ -76,13 +81,36 @@ async def health_check():
             "sentiment_analyzer": "ready",
             "toxicity_detector": "ready",
             "theme_extractor": "ready",
-            "perspective_api": "ready"
+            "perspective_api": "ready",
+            "comment_tagger": "ready"
         }
     }
 
+@app.post("/test/tagging")
+async def test_tagging(request: CommentAnalysisRequest):
+    """Test the tagging functionality with a sample comment."""
+    try:
+        logger.info(f"Testing tagging for comment: {request.comment_id}")
+        
+        # Test tagging only
+        tagging_result = await comment_tagger.tag_comment(request.content)
+        
+        return {
+            "comment_id": request.comment_id,
+            "content": request.content,
+            "tags": tagging_result["tags"],
+            "primary_tag": tagging_result["primary_tag"],
+            "tag_count": tagging_result["tag_count"],
+            "tag_colors": {tag: comment_tagger.get_tag_color(tag) for tag in tagging_result["tags"]}
+        }
+        
+    except Exception as e:
+        logger.error(f"Tagging test error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Tagging test failed: {str(e)}")
+
 @app.post("/analyze/comment", response_model=CommentAnalysisResponse)
 async def analyze_comment(request: CommentAnalysisRequest):
-    """Analyze a single comment for sentiment, toxicity, and themes."""
+    """Analyze a single comment for sentiment, toxicity, themes, and tags."""
     try:
         logger.info(f"Analyzing comment: {request.comment_id}")
         
@@ -91,6 +119,7 @@ async def analyze_comment(request: CommentAnalysisRequest):
         toxicity_result = await toxicity_detector.analyze(request.content)
         themes = await theme_extractor.extract_themes(request.content)
         emotions = await sentiment_analyzer.analyze_emotions(request.content)
+        tagging_result = await comment_tagger.tag_comment(request.content)
         
         # Use Perspective API for additional toxicity check
         perspective_toxicity = await perspective_client.analyze_toxicity(request.content)
@@ -104,7 +133,10 @@ async def analyze_comment(request: CommentAnalysisRequest):
             sentiment_score=sentiment_result["score"],
             toxicity_score=combined_toxicity,
             themes=themes,
-            emotions=emotions
+            emotions=emotions,
+            tags=tagging_result["tags"],
+            primary_tag=tagging_result["primary_tag"],
+            tag_count=tagging_result["tag_count"]
         )
         
         logger.info(f"Analysis complete for comment: {request.comment_id}")

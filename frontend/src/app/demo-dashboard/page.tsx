@@ -22,7 +22,8 @@ import {
   ThumbsUp,
   MessageCircle,
   MoreHorizontal,
-  Plus
+  Plus,
+  RefreshCw
 } from 'lucide-react';
 import Image from 'next/image';
 
@@ -60,6 +61,9 @@ interface YouTubeComment {
   platform: string;
   sentiment: string;
   sentimentScore: number;
+  tags?: string[];
+  primary_tag?: string;
+  tag_count?: number;
 }
 
 export default function DemoDashboardPage() {
@@ -80,6 +84,8 @@ export default function DemoDashboardPage() {
   const [youtubeComments, setYoutubeComments] = useState<YouTubeComment[]>([]);
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [commentsError, setCommentsError] = useState<string | null>(null);
+  const [syncLoading, setSyncLoading] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
   
   // Dropdown State
   const [selectedPlatform, setSelectedPlatform] = useState('All platforms');
@@ -106,10 +112,18 @@ export default function DemoDashboardPage() {
         setCurrentUser(currentUser);
         setLoading(false);
 
-        // Now try to fetch Google profile and YouTube data
-        await fetchGoogleProfile(currentUser.id);
-        await fetchYouTubeChannel(currentUser.id);
-        await fetchYouTubeComments(currentUser.id);
+                  // First, setup YouTube platform data
+          try {
+            await setupYouTubePlatform();
+          } catch (setupError) {
+            console.warn('YouTube platform setup failed:', setupError);
+            // Continue anyway, the user might not have YouTube access
+          }
+
+          // Now try to fetch Google profile and YouTube data
+          await fetchGoogleProfile();
+          await fetchYouTubeChannel();
+          await fetchYouTubeComments();
       } catch (err) {
         console.error('Auth check error:', err);
         router.push('/login?redirectTo=/demo-dashboard');
@@ -135,7 +149,62 @@ export default function DemoDashboardPage() {
     };
   }, []);
 
-  const fetchGoogleProfile = async (userId: string) => {
+  const setupYouTubePlatform = async () => {
+    try {
+      // Get session for authentication
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError || !session) {
+        throw new Error('No valid session found');
+      }
+
+      console.log('🔍 Session data for setup:', {
+        hasProviderToken: !!session.provider_token,
+        hasProviderRefreshToken: !!session.provider_refresh_token,
+        provider: session.user?.app_metadata?.provider,
+        providers: session.user?.app_metadata?.providers
+      });
+
+      const headers = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`,
+      };
+
+      // Include provider token in the request body if available
+      const requestBody: any = {};
+      if (session.provider_token) {
+        requestBody.provider_token = session.provider_token;
+      }
+      if (session.provider_refresh_token) {
+        requestBody.provider_refresh_token = session.provider_refresh_token;
+      }
+
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/auth/setup-youtube-platform`, {
+        method: 'POST',
+        headers,
+        body: Object.keys(requestBody).length > 0 ? JSON.stringify(requestBody) : undefined,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error('❌ YouTube platform setup failed:', {
+          status: response.status,
+          statusText: response.statusText,
+          errorData: errorData
+        });
+        throw new Error(errorData.error || `HTTP ${response.status}`);
+      }
+
+      const result = await response.json();
+      console.log('✅ YouTube platform setup result:', result);
+      return result;
+    } catch (err) {
+      console.error('YouTube platform setup error:', err);
+      throw err;
+    }
+  };
+
+  const fetchGoogleProfile = async () => {
     setProfileLoading(true);
     setProfileError(null);
 
@@ -160,7 +229,7 @@ export default function DemoDashboardPage() {
         'X-Provider-Token': providerToken,
       };
 
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/google-profile/basic/${userId}`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/google-profile/basic`, {
         headers,
       });
 
@@ -179,33 +248,24 @@ export default function DemoDashboardPage() {
     }
   };
 
-  const fetchYouTubeChannel = async (userId: string) => {
+  const fetchYouTubeChannel = async () => {
     setYoutubeLoading(true);
     setYoutubeError(null);
 
     try {
-      // Get session to access provider token
+      // Get session for authentication
       const { data: { session }, error: sessionError } = await supabase.auth.getSession();
       
       if (sessionError || !session) {
         throw new Error('No valid session found');
       }
 
-      const providerToken = session.provider_token;
-      
-      if (!providerToken) {
-        throw new Error('Your Google access token has expired. Please sign in again.');
-      }
-
-      // Prepare headers with the access token
-      const headers = {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${session.access_token}`,
-        'X-Provider-Token': providerToken,
-      };
-
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/youtube/channel/${userId}`, {
-        headers,
+      // The backend now handles token refresh automatically
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/youtube/channel`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
       });
 
       if (!response.ok) {
@@ -223,33 +283,40 @@ export default function DemoDashboardPage() {
     }
   };
 
-  const fetchYouTubeComments = async (userId: string) => {
+  const fetchYouTubeComments = async () => {
     setCommentsLoading(true);
     setCommentsError(null);
 
     try {
-      // Get session to access provider token
+      // Get session for authentication
       const { data: { session }, error: sessionError } = await supabase.auth.getSession();
       
       if (sessionError || !session) {
         throw new Error('No valid session found');
       }
 
-      const providerToken = session.provider_token;
-      
-      if (!providerToken) {
-        throw new Error('Your Google access token has expired. Please sign in again.');
+      // Test authentication first
+      const testResponse = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/youtube/test-auth`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+      });
+
+      if (!testResponse.ok) {
+        const testError = await testResponse.json().catch(() => ({}));
+        throw new Error(`Authentication test failed: ${testError.error || 'Unknown error'}`);
       }
 
-      // Prepare headers with the access token
-      const headers = {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${session.access_token}`,
-        'X-Provider-Token': providerToken,
-      };
+      const testResult = await testResponse.json();
+      console.log('✅ Authentication test passed:', testResult);
 
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/youtube/comments/${userId}?limit=10`, {
-        headers,
+      // The backend now handles token refresh automatically
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/youtube/comments?limit=10`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
       });
 
       if (!response.ok) {
@@ -264,6 +331,60 @@ export default function DemoDashboardPage() {
       setCommentsError(err instanceof Error ? err.message : 'Failed to load YouTube comments');
     } finally {
       setCommentsLoading(false);
+    }
+  };
+
+  const syncComments = async () => {
+    
+    setSyncLoading(true);
+    setSyncMessage(null);
+    try {
+      // Get session for authentication
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError || !session) {
+        throw new Error('No valid session found');
+      }
+
+      // Test authentication first
+      const testResponse = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/youtube/test-auth`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+      });
+
+      if (!testResponse.ok) {
+        const testError = await testResponse.json().catch(() => ({}));
+        throw new Error(`Authentication test failed: ${testError.error || 'Unknown error'}`);
+      }
+
+      const testResult = await testResponse.json();
+      console.log('✅ Authentication test passed:', testResult);
+
+      // The backend now handles token refresh automatically
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/youtube/sync-comments`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+      });
+
+      const result = await response.json();
+      
+      if (response.ok) {
+        setSyncMessage(`✅ ${result.message}`);
+        // Refresh comments after sync
+        await fetchYouTubeComments();
+      } else {
+        setSyncMessage(`❌ ${result.error || 'Sync failed'}`);
+      }
+    } catch (error) {
+      console.error('Sync error:', error);
+      setSyncMessage(`❌ Failed to sync comments: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setSyncLoading(false);
     }
   };
 
@@ -324,6 +445,28 @@ export default function DemoDashboardPage() {
       .join('')
       .toUpperCase()
       .slice(0, 2);
+  };
+
+  const getTagColor = (tag: string) => {
+    const colorMap: { [key: string]: string } = {
+      "Product Praise": "bg-green-100 text-green-800",
+      "Feature Request": "bg-blue-100 text-blue-800",
+      "Hate Speech": "bg-red-100 text-red-800",
+      "Feedback": "bg-yellow-100 text-yellow-800",
+      "Confusion/Question": "bg-purple-100 text-purple-800",
+      "Spam": "bg-gray-100 text-gray-800",
+      "Callout": "bg-orange-100 text-orange-800",
+      "Timestamp Reference": "bg-indigo-100 text-indigo-800",
+      "Requests/Ideas": "bg-pink-100 text-pink-800",
+      "Praise for Creator": "bg-emerald-100 text-emerald-800",
+      "Praise for Video": "bg-teal-100 text-teal-800",
+      "Community Interaction": "bg-cyan-100 text-cyan-800",
+      "Inside Joke/Meme": "bg-violet-100 text-violet-800",
+      "Sensitive Topics": "bg-amber-100 text-amber-800",
+      "Potential Conflict": "bg-rose-100 text-rose-800",
+      "Toxicity": "bg-red-100 text-red-800"
+    };
+    return colorMap[tag] || "bg-gray-100 text-gray-800";
   };
 
   // Mock data for demo (replace with real data later)
@@ -490,23 +633,90 @@ export default function DemoDashboardPage() {
               </CardHeader>
               <CardContent>
                 {youtubeChannel ? (
-                  <div className="flex items-center space-x-4">
-                    <div className="w-12 h-12 rounded-full overflow-hidden">
-                      <Image
-                        src={youtubeChannel.profileImage}
-                        alt={youtubeChannel.name}
-                        width={48}
-                        height={48}
-                        className="w-full h-full object-cover"
-                      />
+                  <div className="space-y-4">
+                    <div className="flex items-center space-x-3">
+                      <div className="w-12 h-12 rounded-full overflow-hidden">
+                        <Image
+                          src={youtubeChannel.profileImage}
+                          alt={youtubeChannel.name}
+                          width={48}
+                          height={48}
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                      <div>
+                        <h3 className="font-semibold">{youtubeChannel.name}</h3>
+                        <p className="text-sm text-gray-600">{formatNumber(youtubeChannel.subscriberCount)} subscribers</p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="font-medium">{youtubeChannel.name}</p>
-                      <p className="text-sm text-gray-500">{formatNumber(youtubeChannel.subscriberCount)} subscribers</p>
+                    
+                    <div className="grid grid-cols-3 gap-4 text-center">
+                      <div>
+                        <p className="text-2xl font-bold">{formatNumber(youtubeChannel.videoCount)}</p>
+                        <p className="text-xs text-gray-600">Videos</p>
+                      </div>
+                      <div>
+                        <p className="text-2xl font-bold">{formatNumber(youtubeChannel.totalViews)}</p>
+                        <p className="text-xs text-gray-600">Views</p>
+                      </div>
+                      <div>
+                        <p className="text-2xl font-bold">{youtubeChannel.country || 'N/A'}</p>
+                        <p className="text-xs text-gray-600">Country</p>
+                      </div>
+                    </div>
+                    
+                    <div className="flex space-x-2">
+                      <Button 
+                        onClick={syncComments}
+                        disabled={syncLoading}
+                        className="flex-1"
+                        variant="outline"
+                        size="sm"
+                      >
+                        {syncLoading ? (
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                            Syncing...
+                          </>
+                        ) : (
+                          <>
+                            <RefreshCw className="h-4 w-4 mr-2" />
+                            Sync Comments
+                          </>
+                        )}
+                      </Button>
+                      <Button 
+                        onClick={setupYouTubePlatform}
+                        size="sm"
+                        variant="outline"
+                      >
+                        Setup YouTube
+                      </Button>
+                      {syncMessage && (
+                        <div className="mt-2 text-sm">
+                          <span className={syncMessage.startsWith('✅') ? 'text-green-600' : 'text-red-600'}>
+                            {syncMessage}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </div>
+                ) : youtubeError ? (
+                  <div className="text-center py-4">
+                    <p className="text-red-600 text-sm">{youtubeError}</p>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="mt-2"
+                      onClick={() => currentUser && fetchYouTubeChannel()}
+                    >
+                      Retry
+                    </Button>
+                  </div>
                 ) : (
-                  <p className="text-gray-500">YouTube channel not connected</p>
+                  <div className="text-center py-4">
+                    <p className="text-gray-500 text-sm">No YouTube channel connected</p>
+                  </div>
                 )}
               </CardContent>
             </Card>
@@ -685,7 +895,7 @@ export default function DemoDashboardPage() {
                       variant="outline" 
                       size="sm" 
                       className="mt-2"
-                      onClick={() => currentUser && fetchYouTubeComments(currentUser.id)}
+                      onClick={() => currentUser && fetchYouTubeComments()}
                     >
                       Retry
                     </Button>
@@ -722,12 +932,30 @@ export default function DemoDashboardPage() {
                               <span className="text-sm text-gray-500">•</span>
                               <span className="text-sm text-gray-500">{comment.platform}</span>
                             </div>
-                            <Badge className={getSentimentColor(comment.sentiment)}>
-                              {comment.sentiment}
-                            </Badge>
+                            <div className="flex items-center space-x-2">
+                              <Badge className={getSentimentColor(comment.sentiment)}>
+                                {comment.sentiment}
+                              </Badge>
+                              {comment.primary_tag && (
+                                <Badge className={getTagColor(comment.primary_tag)}>
+                                  {comment.primary_tag}
+                                </Badge>
+                              )}
+                            </div>
                           </div>
                           
                           <p className="text-gray-700">{comment.content}</p>
+                          
+                          {/* Display additional tags if any */}
+                          {comment.tags && comment.tags.length > 1 && (
+                            <div className="flex flex-wrap gap-1">
+                              {comment.tags.slice(1).map((tag, index) => (
+                                <Badge key={index} variant="outline" className={`text-xs ${getTagColor(tag)}`}>
+                                  {tag}
+                                </Badge>
+                              ))}
+                            </div>
+                          )}
                           
                           <div className="flex items-center justify-between">
                             <div className="flex items-center space-x-4">
@@ -772,11 +1000,11 @@ export default function DemoDashboardPage() {
               <CardContent className="space-y-4">
                 <div className="p-3 bg-gray-50 rounded-lg">
                   <p className="font-medium text-sm mb-2">Thanks for the kind words!</p>
-                  <p className="text-sm text-gray-600">I'm so glad the content was helpful. Let me know how those strategies work for you!</p>
+                  <p className="text-sm text-gray-600">I&apos;m so glad the content was helpful. Let me know how those strategies work for you!</p>
                 </div>
                 <div className="p-3 bg-gray-50 rounded-lg">
                   <p className="font-medium text-sm mb-2">Great suggestion!</p>
-                  <p className="text-sm text-gray-600">We're actually working on a scheduling feature right now. Would love to hear more about what you'd want to see in it.</p>
+                  <p className="text-sm text-gray-600">We&apos;re actually working on a scheduling feature right now. Would love to hear more about what you&apos;d want to see in it.</p>
                 </div>
                 <div className="p-3 bg-gray-50 rounded-lg">
                   <p className="font-medium text-sm mb-2">Custom reply...</p>
@@ -802,7 +1030,7 @@ export default function DemoDashboardPage() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="font-medium">Hide Toxic Comments</p>
-                                         <p className="text-sm text-gray-500">If toxicity &gt; 80%, auto-hide comment</p>
+                    <p className="text-sm text-gray-500">If toxicity {'>'} 80%, auto-hide comment</p>
                   </div>
                   <div className="w-10 h-6 bg-green-500 rounded-full flex items-center justify-end pr-1">
                     <div className="w-4 h-4 bg-white rounded-full"></div>
